@@ -1,4 +1,4 @@
-# PracticalMachineLearningProject
+# Practical Machine Learning Project
 Course project for the Practical Machine Learning course in Corsera
 
 # Information and instructions
