@@ -1,0 +1,143 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "D. Cucchiara"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+# Project Overview
+Personal fitness trackers are commonly used to track individual fitness data. 
+Users can quantify how much of a particular movement they make, but not how
+well they did the movement. This analysis will use accelerometer data from six 
+participants. Accelerometers were worn on the belt, forearm, arm or on a dumbell. 
+Participants were instructed to perform dumbell bicep curls (10 reps)
+incorrectly and correctly, in five different ways. I will use the data to predict
+the manner in which they did the exercise.
+
+# Data Preparation
+Load necessary packages
+```{r, echo=TRUE, warning=FALSE, message=FALSE, error=FALSE, results=FALSE}
+library(lattice)
+library(ggplot2)
+library(caret)
+library(kernlab)
+library(rattle)
+library(reshape2)
+library(corrplot)
+library(ggcorrplot)
+library(randomForest)
+library(rpart)
+set.seed(3232)
+```
+
+load the test and training data
+```{r}
+trainData <- read.csv("./pml-training.csv")
+testData <- read.csv("./pml-testing.csv")
+dim(trainData)
+dim(testData)
+```
+
+Data cleaning - Here, variables with nearly zero variance or that are almost always NA,
+and the columns containing summary statistics or irrelevant data will be removed. 
+``` {r}
+trainClean <- trainData[,colMeans(is.na(trainData))< .9] 
+trainClean <- trainClean[,-c(1:7)] 
+nvz <- nearZeroVar(trainClean)
+trainClean <- trainClean[,-nvz]
+dim(trainClean)
+```
+```{r, echo=FALSE, results='hide'}
+corMat <- cor(trainClean[sapply(trainClean, is.numeric)])
+melt <- melt(corMat, as.is=TRUE)
+```
+
+Performed correlation matrix, see appendix, fig 1.
+The correlation matrix shows there are variables that are correlated, which must be removed
+```{r}
+c <- findCorrelation(corMat, cutoff = .90)
+trainClean <- trainClean[,-c]
+```
+
+Split the data into training (70%) and validation (30%)
+``` {r}
+inTrain <- createDataPartition(y=trainClean$classe, p=0.7, list=FALSE)
+train <- trainClean[inTrain,]
+valid <- trainClean[-inTrain,]
+# Create a control for 3 fold validation
+control <- trainControl(method="cv", number=3, verboseIter = FALSE)
+```
+
+# Building the models
+## Random Forests
+```{r}
+# Fit the model on train using random forest
+train$classe <- factor(train$classe)
+RFfit <- randomForest(classe~., data=train, method="class", trControl = control, tuneLength = 5)
+RFfit
+RFpred<- predict(RFfit, valid) # predict on the valid data set.
+cmRF <- confusionMatrix(RFpred, as.factor(valid$classe))
+cmRF
+table(RFpred, valid$classe)
+```
+The estimated accuracy is 0.9937, and oos error is 0.0063
+
+## Decision Tree
+```{r}
+
+DTfit <- train(classe~., data=train, method='rpart', trControl=control, tuneLength=5) 
+DTfit
+DTpred <- predict(DTfit, valid)
+cmDT <- confusionMatrix(DTpred, factor(valid$classe))
+cmDT
+table(DTpred, valid$classe)
+```
+The estimated accuracy is 0.5869, and oos error is 0.4131
+The decision tree figure is available in the appendix, fig2.
+
+## Support Vector Machine
+```{r}
+SVMfit <- train(classe~., data=train, method="svmLinear", trControl = control, tuneLength = 5, verbose = FALSE)
+SVMfit
+SVMpred <- predict(SVMfit, valid)
+SVMcm <- confusionMatrix(SVMpred, factor(valid$classe))
+SVMcm
+table(SVMpred,valid$classe)
+```
+The estimated accuracy is 0.7499, and oos error is 0.2501
+
+## Selecting the most accurate method to use on the test set.
+Random forests method was 99.37% accurate. Decision trees method was 58.69% accurate, and Support Vector Machine method was 74.99% accurate. In this case the data indicates that the most accurate model for predicting our test set is Random Forest
+
+## Predicting the test data set
+```{r}
+TestPred <- predict(RFfit, testData)
+TestPred
+```
+
+#Appendix
+fig. 1 correlation matrix
+```{r}
+corMat <- cor(trainClean[sapply(trainClean, is.numeric)])
+melt <- melt(corMat, as.is=TRUE)
+View(melt)
+corPlot <- ggplot(data=melt, aes(x=Var1, y=Var2, fill=value)) +
+        geom_tile(color="white") +
+        scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+         theme(axis.text.x = element_text(angle = 90, vjust = 1, 
+    size = 6, hjust = 1), axis.text.y=element_text(size=6))+
+ coord_fixed()
+corPlot
+```
+fig. 2 decision tree
+```{r}
+fancyRpartPlot(DTfit$finalModel)
+```
+
+
+
+
